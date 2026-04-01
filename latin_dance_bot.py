@@ -1,4 +1,4 @@
-mport logging
+import logging
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 BOT_TOKEN = "8381012348:AAEoLoOLwKNbDezehLkzs7yE7oT86QEIoZs"
