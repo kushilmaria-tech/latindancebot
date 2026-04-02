@@ -1,7 +1,7 @@
 import logging
 import os
 
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -10,136 +10,161 @@ from telegram.ext import (
     filters,
 )
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TRAINER_CHAT_ID = int(os.getenv("TRAINER_CHAT_ID", "0"))
 
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user
-    first_name = user.first_name if user and user.first_name else "друг"
-
-    await update.message.reply_text(
-        f"Привет, {first_name}! \n\n"
-        "Отправь сюда видео своего танца, и мы посмотрим его. "
-        "Ответ придёт в этот же чат."
-    )
+ASKING_COURSE_QUESTION = "asking_course_question"
+ASKING_PAYMENT_ISSUE = "asking_payment_issue"
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Просто отправь видео. "
-        "После просмотра мы ответим тебе сюда в чат."
-    )
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        ["ℹ️ Информация о курсе"],
+        ["💳 Проблема с оплатой"],
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    if update.message:
+        context.user_data[ASKING_COURSE_QUESTION] = False
+        context.user_data[ASKING_PAYMENT_ISSUE] = False
+
+        await update.message.reply_text(
+            "Добро пожаловать в Latin Dance Lab 💃\n\n"
+            "Выберите, что вам нужно:",
+            reply_markup=reply_markup
+        )
 
 
-async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.message:
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
         return
 
+    text = update.message.text
     user = update.effective_user
     chat = update.effective_chat
 
-    if not user or not chat:
-        return
+    if text == "ℹ️ Информация о курсе":
+        context.user_data[ASKING_COURSE_QUESTION] = True
+        context.user_data[ASKING_PAYMENT_ISSUE] = False
 
-    client_chat_id = chat.id
-    first_name = user.first_name or "Без имени"
-    username = f"@{user.username}" if user.username else "без username"
-
-    await update.message.reply_text(
-        "Видео получено 🙌\n"
-        "Спасибо! Мы посмотрим его и ответим тебе здесь."
-    )
-
-    caption = (
-        "Новое видео от клиента\n"
-        f"Имя: {first_name}\n"
-        f"Username: {username}\n"
-        f"Chat ID: {client_chat_id}\n\n"
-        f"Для ответа:\n/reply {client_chat_id} твой текст"
-    )
-
-    if update.message.video:
-        await context.bot.send_video(
-            chat_id=TRAINER_CHAT_ID,
-            video=update.message.video.file_id,
-            caption=caption,
-        )
-    elif update.message.document:
-        await context.bot.send_document(
-            chat_id=TRAINER_CHAT_ID,
-            document=update.message.document.file_id,
-            caption=caption,
+        await update.message.reply_text(
+            "Наш курс поможет тебе:\n"
+            "— стать увереннее\n"
+            "— улучшить пластику\n"
+            "— научиться красиво двигаться 💃\n\n"
+            "Если хочешь узнать подробнее о курсе, напиши сюда свой вопрос 🤍"
         )
 
+    elif text == "💳 Проблема с оплатой":
+        context.user_data[ASKING_COURSE_QUESTION] = False
+        context.user_data[ASKING_PAYMENT_ISSUE] = True
 
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.message:
-        return
+        await update.message.reply_text(
+            "Напиши, пожалуйста, подробнее, что именно не получилось с оплатой 🤍"
+        )
 
-    await update.message.reply_text(
-        "Пожалуйста, отправь видео своего танца."
-    )
+    elif context.user_data.get(ASKING_COURSE_QUESTION):
+        context.user_data[ASKING_COURSE_QUESTION] = False
+
+        if not user or not chat:
+            return
+
+        client_id = chat.id
+        name = user.first_name or "Без имени"
+        username = f"@{user.username}" if user.username else "нет username"
+
+        await context.bot.send_message(
+            chat_id=TRAINER_CHAT_ID,
+            text=(
+                "ℹ️ Новый вопрос о курсе\n\n"
+                f"👤 Имя: {name}\n"
+                f"📱 Username: {username}\n"
+                f"🆔 ID: {client_id}\n\n"
+                f"❓ Вопрос:\n{text}\n\n"
+                f"Ответить:\n/reply {client_id} текст"
+            )
+        )
+
+        await update.message.reply_text(
+            "Спасибо 🤍\n\n"
+            "Твой вопрос отправлен нашему менеджеру. Мы скоро свяжемся с тобой."
+        )
+
+    elif context.user_data.get(ASKING_PAYMENT_ISSUE):
+        context.user_data[ASKING_PAYMENT_ISSUE] = False
+
+        if not user or not chat:
+            return
+
+        client_id = chat.id
+        name = user.first_name or "Без имени"
+        username = f"@{user.username}" if user.username else "нет username"
+
+        await context.bot.send_message(
+            chat_id=TRAINER_CHAT_ID,
+            text=(
+                "💳 Новая проблема с оплатой\n\n"
+                f"👤 Имя: {name}\n"
+                f"📱 Username: {username}\n"
+                f"🆔 ID: {client_id}\n\n"
+                f"📝 Сообщение:\n{text}\n\n"
+                f"Ответить:\n/reply {client_id} текст"
+            )
+        )
+
+        await update.message.reply_text(
+            "Спасибо 🤍\n\n"
+            "Сообщение отправлено нашему менеджеру. Мы скоро свяжемся с тобой и постараемся помочь."
+        )
+
+    else:
+        await update.message.reply_text(
+            "Пожалуйста, выбери нужный вариант ниже 👇"
+        )
 
 
-async def reply_to_client(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.message or not update.effective_chat:
+async def reply_to_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_chat or not update.message:
         return
 
     if update.effective_chat.id != TRAINER_CHAT_ID:
         return
 
     if len(context.args) < 2:
-        await update.message.reply_text(
-            "Использование:\n/reply chat_id текст"
-        )
+        await update.message.reply_text("Формат:\n/reply chat_id текст")
         return
 
     try:
-        client_chat_id = int(context.args[0])
+        client_id = int(context.args[0])
     except ValueError:
         await update.message.reply_text("chat_id должен быть числом.")
         return
 
-    reply_text = " ".join(context.args[1:])
+    text = " ".join(context.args[1:])
 
-    try:
-        await context.bot.send_message(
-            chat_id=client_chat_id,
-            text=f"Ответ по вашему видео:\n\n{reply_text}",
-        )
-        await update.message.reply_text("Ответ отправлен клиенту ✅")
-    except Exception as e:
-        await update.message.reply_text(f"Не удалось отправить ответ: {e}")
+    await context.bot.send_message(
+        chat_id=client_id,
+        text=f"💌 Ответ от менеджера:\n\n{text}"
+    )
+
+    await update.message.reply_text("Отправлено ✨")
 
 
-def main() -> None:
+def main():
     if not BOT_TOKEN:
-        raise ValueError("Не найден BOT_TOKEN в переменных окружения")
-
+        raise ValueError("Не найден BOT_TOKEN")
     if not TRAINER_CHAT_ID:
-        raise ValueError("Не найден TRAINER_CHAT_ID в переменных окружения")
+        raise ValueError("Не найден TRAINER_CHAT_ID")
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).build()
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("reply", reply_to_client))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("reply", reply_to_client))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    application.add_handler(MessageHandler(filters.VIDEO, handle_video))
-    application.add_handler(
-        MessageHandler(filters.Document.VIDEO, handle_video)
-    )
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)
-    )
-
-    application.run_polling()
+    app.run_polling()
 
 
 if __name__ == "__main__":
